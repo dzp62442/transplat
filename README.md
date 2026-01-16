@@ -42,6 +42,7 @@ conda install -y pip
 **b. Install PyTorch and torchvision.**
 
 ```bash
+pip install numpy==1.26.3 opencv-python==4.6.0.66
 pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu118
 # Recommended torch==2.1.2
 ```
