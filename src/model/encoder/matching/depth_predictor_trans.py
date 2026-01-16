@@ -242,7 +242,7 @@ class DepthPredictorTrans(nn.Module):
             1.0 / disp_candi_curr.repeat([1, 1, *features.shape[-2:]]),
         )  # [B, C, D, H, W]
 
-        raw_correlation_in = torch.zeros((v*64*64,b, self.embed_dims), device=features.device).to(dtype)
+        raw_correlation_in = torch.zeros((v * h * w, b, self.embed_dims), device=features.device).to(dtype)
 
         camk = torch.eye(4).view(1,4,4).repeat(intr_curr.shape[0], 1, 1).to(intr_curr.device).float()
         camk[:,:3,:3] = intr_curr
@@ -259,29 +259,29 @@ class DepthPredictorTrans(nn.Module):
 
         # coarse matching
         raw_correlation_in = self.coarse_transformer(
-                [features],
-                raw_correlation_in,
-                64,
-                64,
-                bev_pos=None,
-                intrinsics=None,
-                extrinsics=None,
-                depth_sup=None,
-                grid=grid,
-            )
+            [features],
+            raw_correlation_in,
+            h,
+            w,
+            bev_pos=None,
+            intrinsics=None,
+            extrinsics=None,
+            depth_sup=None,
+            grid=grid,
+        )
 
         # coarse-to-fine matching
         raw_correlation_in = self.fine_transformer(
-                [features],
-                raw_correlation_in,
-                64,
-                64,
-                bev_pos=bev_pos,
-                intrinsics=None,
-                extrinsics=None,
-                depth_sup=None,
-                grid=grid,
-            )
+            [features],
+            raw_correlation_in,
+            h,
+            w,
+            bev_pos=bev_pos,
+            intrinsics=None,
+            extrinsics=None,
+            depth_sup=None,
+            grid=grid,
+        )
 
         raw_correlation_in = raw_correlation_in.reshape(v, h, w, b, c)
         raw_correlation_in = raw_correlation_in.permute(3,0,4,1,2)
@@ -317,7 +317,7 @@ class DepthPredictorTrans(nn.Module):
             dino_feature = rearrange(dino_feature, "b v ... -> (v b) ...")
             dino_feature = F.interpolate(
                 dino_feature,
-                size=(64,64),
+                size=(h, w),
                 mode="bilinear",
                 align_corners=True,
             )
@@ -400,6 +400,70 @@ class DepthPredictorTrans(nn.Module):
                 raw_correlation_in_i = torch.mean(torch.stack((raw_correlation_in_part_list[ind_1][0],raw_correlation_in_part_list[ind_2][1], raw_correlation_in_part_list[ind_3][1]), dim=0), dim=0)
                 raw_correlation_in_list.append(raw_correlation_in_i)
             raw_correlation_in = torch.stack(raw_correlation_in_list, dim=0)
+            raw_correlation_in = torch.cat((raw_correlation_in, feat01), dim=1)
+        elif v == 6:
+            def slice_view(tensor, view_idx):
+                start = view_idx * b
+                end = (view_idx + 1) * b
+                return tensor[start:end]
+
+            pair_indices = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)]
+            view_corrs = {idx: [] for idx in range(v)}
+            for ind_1, ind_2 in pair_indices:
+                pose_12 = (
+                    extrinsics[:, ind_2].clone().detach().inverse()
+                    @ extrinsics[:, ind_1].clone().detach()
+                )
+                pose_cur = torch.cat((pose_12, pose_12.inverse()), dim=0)
+                intr_cur = torch.cat(
+                    (slice_view(intr_curr, ind_1), slice_view(intr_curr, ind_2)),
+                    dim=0,
+                )
+                extrinsics_cur = torch.cat(
+                    (
+                        extrinsics[:, ind_1 : ind_1 + 1],
+                        extrinsics[:, ind_2 : ind_2 + 1],
+                    ),
+                    dim=1,
+                )
+                disp_candi_cur = torch.cat(
+                    (
+                        slice_view(disp_candi_curr, ind_1),
+                        slice_view(disp_candi_curr, ind_2),
+                    ),
+                    dim=0,
+                )
+                dino_feature_cur = torch.cat(
+                    (
+                        slice_view(dino_feature, ind_1),
+                        slice_view(dino_feature, ind_2),
+                    ),
+                    dim=0,
+                )
+                feature_cur = torch.cat(
+                    (
+                        features[:, ind_1 : ind_1 + 1],
+                        features[:, ind_2 : ind_2 + 1],
+                    ),
+                    dim=1,
+                )
+                raw_correlation_in_part = self.match_two(
+                    intr_cur,
+                    pose_cur,
+                    extrinsics_cur,
+                    disp_candi_cur,
+                    dino_feature_cur,
+                    feature_cur,
+                )
+                view_corrs[ind_1].append(raw_correlation_in_part[:b])
+                view_corrs[ind_2].append(raw_correlation_in_part[b:])
+
+            raw_correlation_in_list = []
+            for view_idx in range(v):
+                raw_correlation_in_list.append(
+                    torch.mean(torch.stack(view_corrs[view_idx], dim=0), dim=0)
+                )
+            raw_correlation_in = torch.cat(raw_correlation_in_list, dim=0)
             raw_correlation_in = torch.cat((raw_correlation_in, feat01), dim=1)
 
         # refine cost volume via 2D u-net

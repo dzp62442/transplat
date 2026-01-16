@@ -82,7 +82,10 @@ class cam_param_encoder(nn.Module):
         vb, C, H, W = feat.shape
         cam_params = cam_params.view(vb,-1)   # Left shape: (B*N, 16)
 
-        mlp_input = self.bn(cam_params) # mlp_input shape: (B * N, 16)
+        if cam_params.shape[0] == 1:
+            mlp_input = F.layer_norm(cam_params, (self.cam_param_len,))
+        else:
+            mlp_input = self.bn(cam_params) # mlp_input shape: (B * N, 16)
         feat = self.reduce_conv(feat)   # feat shape: (B * N, mid_ch, H, W)
         
         context_se = self.context_mlp(mlp_input)[..., None, None]   # context_se shape: (B * N, mid_ch, 1, 1)

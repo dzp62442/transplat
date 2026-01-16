@@ -11,6 +11,7 @@ from .view_sampler import ViewSampler
 @dataclass
 class ViewSamplerAllCfg:
     name: Literal["all"]
+    num_context_views: int = 0
 
 
 class ViewSamplerAll(ViewSampler[ViewSamplerAllCfg]):
@@ -20,6 +21,7 @@ class ViewSamplerAll(ViewSampler[ViewSamplerAllCfg]):
         extrinsics: Float[Tensor, "view 4 4"],
         intrinsics: Float[Tensor, "view 3 3"],
         device: torch.device = torch.device("cpu"),
+        **kwargs,
     ) -> tuple[
         Int64[Tensor, " context_view"],  # indices for context views
         Int64[Tensor, " target_view"],  # indices for target views
@@ -30,7 +32,7 @@ class ViewSamplerAll(ViewSampler[ViewSamplerAllCfg]):
 
     @property
     def num_context_views(self) -> int:
-        return 0
+        return self.cfg.num_context_views
 
     @property
     def num_target_views(self) -> int:

@@ -30,6 +30,7 @@ class LossDepth(Loss[LossDepthCfg, LossDepthCfgWrapper]):
         batch: BatchedExample,
         gaussians: Gaussians,
         global_step: int,
+        valid_depth_mask: Tensor | None = None,
     ) -> Float[Tensor, ""]:
         # Scale the depth between the near and far planes.
         near = batch["target"]["near"][..., None, None].log()
