@@ -12,7 +12,9 @@ output_dir=checkpoints/omniscene-112x200-transplat
 ```bash
 python -m src.main +experiment=omniscene_112x200 \
 mode=test \
-checkpointing.load=todo \
+checkpointing.load=checkpoints/omniscene-112x200-transplat/checkpoints/epoch_0-step_100000.ckpt \
+test.output_path=outputs/omniscene-112x200-transplat \
+wandb.mode=disabled \
 test.compute_scores=true 
 ```
 
